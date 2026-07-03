@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# IDE
+.vscode/
+
+# macOS
+.DS_Store
+
+# Workspace data
+data/projects/
+data/logs/
+data/cache/
+
+# Generated files
+*.xlsx
+*.xml
+*.db
+
+# Temporary
+*.tmp
