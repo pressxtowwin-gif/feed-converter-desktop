@@ -17,6 +17,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
     QWidget,
+    QMessageBox,
+    QDialog,
 )
 
 from core.paths import APP_ROOT, PROJECTS_DIR, ensure_workspace
@@ -128,7 +130,13 @@ class MainWindow(QMainWindow):
         quit_action.triggered.connect(self.close)
         menu.addAction(quit_action)
 
-    def load_projects(self) -> None:
+    def on_project_selected(self, row: int) -> None:
+        if row < 0 or row >= len(self.projects):
+            self.card.set_project(None)
+            return
+        self.card.set_project(self.projects[row])
+
+    def load_projects(self, _checked: bool = False, *, select_code: str | None = None) -> None:
         ensure_workspace()
         self.projects = list_projects(PROJECTS_DIR)
         self.project_list.clear()
@@ -139,24 +147,35 @@ class MainWindow(QMainWindow):
             self.card.set_project(None)
             return
 
-        for project in self.projects:
+        selected_row = 0
+        for row, project in enumerate(self.projects):
             name = project.get("name") or project.get("code")
             last_update = project.get("last_update") or "нет обновлений"
             item = QListWidgetItem(f"{name}\n{last_update}")
             item.setData(Qt.UserRole, project.get("code"))
             item.setSizeHint(QSize(260, 58))
             self.project_list.addItem(item)
-        self.project_list.setCurrentRow(0)
-
-    def on_project_selected(self, row: int) -> None:
-        if row < 0 or row >= len(self.projects):
-            self.card.set_project(None)
-            return
-        self.card.set_project(self.projects[row])
+            if select_code and project.get("code") == select_code:
+                selected_row = row
+        self.project_list.setCurrentRow(selected_row)
 
     def open_new_project_dialog(self) -> None:
         dialog = NewProjectDialog(self)
-        dialog.exec()
+        if dialog.exec() != QDialog.Accepted or not dialog.created_project:
+            return
+
+        result = dialog.created_project
+        project_code = str(result.get("project_code", ""))
+        self.load_projects(select_code=project_code)
+        QMessageBox.information(
+            self,
+            "Проект создан",
+            "Проект успешно создан.\n"
+            f"ЖК: {result.get('project_name', '—')}\n"
+            f"Формат фида: {result.get('feed_format', result.get('checked_feed_format', '—'))}\n"
+            f"Квартир: {result.get('rows', result.get('checked_apartment_count', '—'))}\n"
+            f"Excel: {result.get('excel_path', '—')}",
+        )
 
     def apply_styles(self) -> None:
         self.setStyleSheet(APP_STYLESHEET)
