@@ -9,13 +9,17 @@ QLabel#VersionText { font-size: 12px; color: #8390A3; }
 QLabel#SectionLabel { font-size: 12px; font-weight: 700; color: #6B7280; text-transform: uppercase; margin-top: 10px; }
 QLabel#PageTitle { font-size: 28px; font-weight: 800; color: #111827; }
 QLabel#CardTitle { font-size: 30px; font-weight: 800; color: #111827; }
+QLabel#SectionTitle { font-size: 17px; font-weight: 800; color: #111827; }
 QLabel#MutedText { font-size: 13px; color: #6B7280; }
+QLabel#EmptyState { font-size: 20px; font-weight: 700; color: #6B7280; }
 QLabel#InfoText { font-size: 14px; color: #374151; line-height: 1.4; }
 QFrame#ProjectCard { background: #FFFFFF; border: 1px solid #E6EAF2; border-radius: 22px; }
+QFrame#DashboardSection { background: #FFFFFF; border: 1px solid #E8EDF5; border-radius: 18px; }
 QFrame#MetricsBox { background: #F8FAFD; border: 1px solid #E8EDF5; border-radius: 18px; }
 QFrame#MetricCard { background: #FFFFFF; border: 1px solid #E9EEF6; border-radius: 14px; }
 QLabel#MetricValue { font-size: 22px; font-weight: 800; color: #0F172A; }
 QLabel#MetricLabel { font-size: 12px; color: #6B7280; }
+QTextEdit#ReadOnlyField { background: #F8FAFD; border: 1px solid #E6EAF2; border-radius: 12px; padding: 8px; color: #374151; font-size: 13px; }
 QPushButton { border: none; border-radius: 12px; padding: 11px 16px; font-weight: 700; }
 QPushButton#PrimaryButton { background: #2563EB; color: white; }
 QPushButton#PrimaryButton:hover { background: #1D4ED8; }

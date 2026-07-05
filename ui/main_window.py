@@ -138,6 +138,12 @@ class MainWindow(QMainWindow):
 
     def load_projects(self, _checked: bool = False, *, select_code: str | None = None) -> None:
         ensure_workspace()
+        if select_code is None:
+            current_item = self.project_list.currentItem()
+            if current_item is not None:
+                current_code = current_item.data(Qt.UserRole)
+                if current_code:
+                    select_code = str(current_code)
         self.projects = list_projects(PROJECTS_DIR)
         self.project_list.clear()
         if not self.projects:
