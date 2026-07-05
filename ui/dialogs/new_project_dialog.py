@@ -6,10 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QDialog,
-    QFormLayout,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -18,6 +17,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QTextEdit,
     QVBoxLayout,
+    QWidget,
 )
 
 from core.downloader import download_url_to_file
@@ -48,6 +48,7 @@ class NewProjectDialog(QDialog):
         self.created_project: dict[str, Any] | None = None
         self._feed_check: FeedCheckResult | None = None
         self._is_busy = False
+        self._last_feed_url_text = ""
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -65,23 +66,19 @@ class NewProjectDialog(QDialog):
         description.setWordWrap(True)
         layout.addWidget(description)
 
-        form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignLeft)
-        form.setFormAlignment(Qt.AlignTop)
-        form.setHorizontalSpacing(18)
-        form.setVerticalSpacing(12)
+        form = QVBoxLayout()
+        form.setSpacing(12)
 
-        self.project_name_input = QLineEdit()
-        self.project_name_input.setPlaceholderText("Например: ЖК Солнечный")
-        form.addRow("Название ЖК *", self.project_name_input)
+        self.project_name_input = self._build_text_input("Например: ЖК Солнечный")
+        form.addWidget(self._build_field("Название ЖК *", self.project_name_input))
 
-        self.developer_name_input = QLineEdit()
-        self.developer_name_input.setPlaceholderText("Необязательно")
-        form.addRow("Застройщик", self.developer_name_input)
+        self.developer_name_input = self._build_text_input("Необязательно")
+        form.addWidget(self._build_field("Застройщик", self.developer_name_input))
 
-        self.feed_url_input = QLineEdit()
-        self.feed_url_input.setPlaceholderText("https://example.com/feed.xml")
-        form.addRow("XML-фид *", self.feed_url_input)
+        self.feed_url_input = self._build_text_input("https://example.com/feed.xml")
+        self.feed_url_input.setAlignment(Qt.AlignLeft)
+        self.feed_url_input.textChanged.connect(self._keep_feed_url_start_visible)
+        form.addWidget(self._build_field("XML-фид *", self.feed_url_input))
         layout.addLayout(form)
 
         self.status_area = QTextEdit()
@@ -98,6 +95,7 @@ class NewProjectDialog(QDialog):
         buttons = QHBoxLayout()
         buttons.setSpacing(12)
         self.check_xml_btn = QPushButton("Проверить XML")
+        self.check_xml_btn.setObjectName("SecondaryButton")
         self.check_xml_btn.clicked.connect(self.check_xml)
         self.create_project_btn = QPushButton("Создать проект")
         self.create_project_btn.setObjectName("PrimaryButton")
@@ -113,6 +111,31 @@ class NewProjectDialog(QDialog):
 
         self.project_name_input.textChanged.connect(self.invalidate_check)
         self.feed_url_input.textChanged.connect(self.invalidate_check)
+
+    def _build_text_input(self, placeholder: str) -> QLineEdit:
+        field = QLineEdit()
+        field.setPlaceholderText(placeholder)
+        field.setMinimumHeight(42)
+        field.setMinimumWidth(620)
+        return field
+
+    def _build_field(self, label_text: str, field: QLineEdit) -> QWidget:
+        container = QWidget()
+        field_layout = QVBoxLayout(container)
+        field_layout.setContentsMargins(0, 0, 0, 0)
+        field_layout.setSpacing(6)
+
+        label = QLabel(label_text)
+        label.setObjectName("InfoText")
+        field_layout.addWidget(label)
+        field_layout.addWidget(field)
+        return container
+
+    def _keep_feed_url_start_visible(self, text: str) -> None:
+        inserted_char_count = len(text) - len(self._last_feed_url_text)
+        self._last_feed_url_text = text
+        if text.startswith(("http://", "https://")) and inserted_char_count > 8:
+            QTimer.singleShot(0, lambda: self.feed_url_input.setCursorPosition(0))
 
     def invalidate_check(self) -> None:
         if self._is_busy:
