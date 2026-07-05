@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMessageBox,
     QPushButton,
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.paths import PROJECTS_DIR
+from core.system.openers import BrowserOpenError, open_xml_in_browser
 from core.excel_table import read_existing_rows_by_id
 from core.project_service import project_config_status, project_statistics
 
@@ -242,7 +244,34 @@ class ProjectDashboard(QFrame):
         self._open_existing_file(self.main_excel_path, "Excel не найден", "Основной Excel-файл не найден")
 
     def open_xml(self) -> None:
-        self._open_existing_file(self.current_xml_path, "XML не найден", "Текущий XML-файл не найден")
+        if self.current_xml_path is None:
+            return
+        if not self.current_xml_path.exists():
+            QMessageBox.warning(self, "XML не найден", f"Текущий XML-файл не найден:\n{self.current_xml_path}")
+            return
+
+        browser_options = {
+            "Браузер по умолчанию": "default",
+            "Google Chrome": "chrome",
+            "Safari": "safari",
+            "Firefox": "firefox",
+            "Microsoft Edge": "edge",
+        }
+        browser_label, accepted = QInputDialog.getItem(
+            self,
+            "Открыть XML",
+            "Выберите браузер:",
+            list(browser_options.keys()),
+            0,
+            False,
+        )
+        if not accepted:
+            return
+
+        try:
+            open_xml_in_browser(self.current_xml_path, browser_options[browser_label])
+        except (BrowserOpenError, OSError) as exc:
+            QMessageBox.warning(self, "Браузер недоступен", str(exc))
 
     def open_project_folder(self) -> None:
         self._open_existing_file(self.project_dir, "Папка не найдена", "Папка проекта не найдена")
