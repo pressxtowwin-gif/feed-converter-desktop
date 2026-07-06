@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QThread, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QFrame,
@@ -24,6 +24,8 @@ from core.paths import PROJECTS_DIR
 from core.system.openers import BrowserOpenError, open_xml_in_browser
 from core.excel_table import read_existing_rows_by_id
 from core.project_service import project_config_status, project_statistics
+from ui.dialogs.update_progress_dialog import UpdateProgressDialog
+from ui.workers.update_worker import ProjectUpdateWorker
 
 
 def _safe(value: Any, fallback: str = "—") -> str:
@@ -44,6 +46,8 @@ def _format_int(value: Any) -> str:
 class ProjectDashboard(QFrame):
     """Правая панель с рабочей информацией о выбранном ЖК."""
 
+    project_updated = Signal(str)
+
     def __init__(self) -> None:
         super().__init__()
         self.setObjectName("ProjectCard")
@@ -51,6 +55,9 @@ class ProjectDashboard(QFrame):
         self.project_dir: Path | None = None
         self.main_excel_path: Path | None = None
         self.current_xml_path: Path | None = None
+        self.update_thread: QThread | None = None
+        self.update_worker: ProjectUpdateWorker | None = None
+        self.update_dialog: UpdateProgressDialog | None = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(28, 28, 28, 28)
@@ -103,11 +110,13 @@ class ProjectDashboard(QFrame):
         action_layout = QHBoxLayout(actions)
         action_layout.setContentsMargins(20, 16, 20, 16)
         action_layout.setSpacing(12)
+        self.update_project_btn = self._action_button("🔄 Обновить проект", self.start_update)
+        self.update_project_btn.setObjectName("PrimaryButton")
         self.open_excel_btn = self._action_button("Открыть Excel", self.open_excel)
         self.open_folder_btn = self._action_button("Открыть папку", self.open_project_folder)
         self.open_xml_btn = self._action_button("Открыть XML", self.open_xml)
         self.refresh_hint_btn = self._action_button("Обновить список", None)
-        for button in (self.open_excel_btn, self.open_folder_btn, self.open_xml_btn, self.refresh_hint_btn):
+        for button in (self.update_project_btn, self.open_excel_btn, self.open_folder_btn, self.open_xml_btn, self.refresh_hint_btn):
             action_layout.addWidget(button)
         action_layout.addStretch()
         content_layout.addWidget(actions)
@@ -231,6 +240,137 @@ class ProjectDashboard(QFrame):
         self.xml_path_value.setText(str(self.current_xml_path))
         self.excel_path_value.setText(str(self.main_excel_path))
         self.feed_url_value.setPlainText(_safe(config.get("feed_url") or project.get("feed_url")))
+
+    def _set_update_buttons_enabled(self, enabled: bool) -> None:
+        for button in (self.update_project_btn, self.open_excel_btn, self.open_xml_btn, self.open_folder_btn):
+            button.setEnabled(enabled)
+
+    def start_update(self) -> None:
+        if not self.project:
+            return
+        code = str(self.project.get("code") or "")
+        if not code:
+            return
+
+        current_feed = self.feed_url_value.toPlainText().strip() or _safe(self.current_xml_path)
+        message = (
+            f"Текущий проект: {self.title.text()}\n"
+            f"Текущий фид: {current_feed}\n"
+            f"Последнее обновление: {self.metric_last.value_label.text()}\n"  # type: ignore[attr-defined]
+            f"Квартир: {self.metric_apartments.value_label.text()}\n\n"  # type: ignore[attr-defined]
+            "Обновить проект?"
+        )
+        answer = QMessageBox.question(
+            self,
+            "Обновить проект?",
+            message,
+            QMessageBox.Yes | QMessageBox.Cancel,
+            QMessageBox.Yes,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        self._run_update_worker(force=False)
+
+    def _run_update_worker(self, *, force: bool) -> None:
+        if not self.project:
+            return
+        code = str(self.project.get("code") or "")
+        self._set_update_buttons_enabled(False)
+        self.update_dialog = UpdateProgressDialog(self)
+        self.update_thread = QThread(self)
+        self.update_worker = ProjectUpdateWorker(PROJECTS_DIR, code, force=force)
+        self.update_worker.moveToThread(self.update_thread)
+        self.update_thread.started.connect(self.update_worker.run)
+        self.update_worker.progress.connect(self._on_update_progress)
+        self.update_worker.finished.connect(self._on_update_finished)
+        self.update_worker.failed.connect(self._on_update_failed)
+        self.update_worker.safety_confirmation_required.connect(self._on_safety_confirmation_required)
+        self.update_worker.finished.connect(self.update_thread.quit)
+        self.update_worker.failed.connect(self.update_thread.quit)
+        self.update_worker.safety_confirmation_required.connect(self.update_thread.quit)
+        self.update_thread.finished.connect(self.update_worker.deleteLater)
+        self.update_thread.finished.connect(self.update_thread.deleteLater)
+        self.update_thread.start()
+        self.update_dialog.show()
+
+    def _cleanup_update_worker(self) -> None:
+        self.update_thread = None
+        self.update_worker = None
+
+    def _on_update_progress(self, text: str, status: str) -> None:
+        if self.update_dialog is not None:
+            self.update_dialog.set_stage(text, status)
+
+    def _on_safety_confirmation_required(self, report: dict[str, Any]) -> None:
+        if self.update_dialog is not None:
+            self.update_dialog.close()
+            self.update_dialog = None
+        self._cleanup_update_worker()
+        messages = report.get("messages") or []
+        details = "\n".join(f"{item.get('level', '')}: {item.get('message', '')}" for item in messages) or "Safety обнаружил критическую проблему."
+        answer = QMessageBox.warning(
+            self,
+            "Safety-проверка требует подтверждения",
+            f"{details}\n\nПродолжить обновление принудительно?",
+            QMessageBox.Yes | QMessageBox.Cancel,
+            QMessageBox.Cancel,
+        )
+        if answer == QMessageBox.Yes:
+            self._run_update_worker(force=True)
+        else:
+            self._set_update_buttons_enabled(True)
+
+    def _on_update_finished(self, result: dict[str, Any]) -> None:
+        if self.update_dialog is not None:
+            self.update_dialog.close()
+            self.update_dialog = None
+        self._cleanup_update_worker()
+        self._set_update_buttons_enabled(True)
+        if self.project:
+            self.set_project(self.project)
+            self.project_updated.emit(str(self.project.get("code") or ""))
+        self._show_success_dialog(result)
+
+    def _on_update_failed(self, message: str) -> None:
+        if self.update_dialog is not None:
+            self.update_dialog.close()
+            self.update_dialog = None
+        self._cleanup_update_worker()
+        self._set_update_buttons_enabled(True)
+        QMessageBox.critical(self, "Ошибка обновления", f"Проект не обновлён.\n\n{message}")
+
+    def _show_success_dialog(self, result: dict[str, Any]) -> None:
+        elapsed_ms = result.get("update_duration_ms")
+        elapsed = "—"
+        if elapsed_ms not in (None, ""):
+            try:
+                elapsed = f"{int(elapsed_ms) / 1000:.1f} сек."
+            except Exception:
+                elapsed = str(elapsed_ms)
+        message = (
+            "✓ Проект успешно обновлён\n\n"
+            f"Project name: {_safe(result.get('project_name'))}\n"
+            f"Updated apartments: {_safe(result.get('updated_apartments'))}\n"
+            f"Added apartments: {_safe(result.get('added'))}\n"
+            f"Removed apartments: {_safe(result.get('deleted'))}\n"
+            f"Price changes: {_safe(result.get('prices_changed'))}\n"
+            f"Elapsed time: {elapsed}"
+        )
+        box = QMessageBox(self)
+        box.setWindowTitle("Проект обновлён")
+        box.setText(message)
+        open_excel = box.addButton("Открыть Excel", QMessageBox.AcceptRole)
+        history = box.addButton("Посмотреть историю", QMessageBox.ActionRole)
+        close = box.addButton("Закрыть", QMessageBox.RejectRole)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked == open_excel:
+            self.open_excel()
+        elif clicked == history:
+            history_dir = self.project_dir / "history" if self.project_dir is not None else None
+            self._open_existing_file(history_dir, "История не найдена", "Папка истории изменений не найдена")
+        elif clicked == close:
+            return
 
     def _open_existing_file(self, path: Path | None, title: str, missing_message: str) -> None:
         if path is None:
