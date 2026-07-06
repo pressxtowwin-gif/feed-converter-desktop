@@ -282,6 +282,7 @@ def update_excel_from_feed_rows(rows: list[dict[str, Any]], feed_columns: list[s
 
     output_rows: list[dict[str, Any]] = []
     added = 0
+    processed_apartments = 0
     updated_apartments = 0
     updated_cells = 0
     prices_changed = 0
@@ -289,13 +290,18 @@ def update_excel_from_feed_rows(rows: list[dict[str, Any]], feed_columns: list[s
     price_changes: list[dict[str, str]] = []
 
     for apt_id in feed_order:
+        processed_apartments += 1
         feed_row = feed_by_id[apt_id]
         old_row = existing_by_id.get(apt_id)
         if old_row is None:
             added += 1
             added_ids.append(apt_id)
         new_row, changed_cells = make_updated_row(feed_row, old_row, output_columns)
-        if changed_cells > 0:
+        # Updated-apartment semantics are intentionally narrower than processed rows:
+        # count only existing apartment IDs where at least one feed-controlled cell
+        # was actually changed/restored from XML. Newly inserted rows are reported
+        # via ``added`` instead.
+        if old_row is not None and changed_cells > 0:
             updated_apartments += 1
             updated_cells += changed_cells
         if old_row is not None:
@@ -319,6 +325,7 @@ def update_excel_from_feed_rows(rows: list[dict[str, Any]], feed_columns: list[s
         "engine_version": EXCEL_ENGINE_VERSION,
         "excel_rows_before": excel_rows_before,
         "feed_rows": len(feed_order),
+        "processed_apartments": processed_apartments,
         "deleted": deleted,
         "added": added,
         "updated_apartments": updated_apartments,
