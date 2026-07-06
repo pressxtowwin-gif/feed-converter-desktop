@@ -5,16 +5,19 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt, QThread, QUrl, Signal
+from PySide6.QtCore import QPoint, QRect, QSize, Qt, QThread, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
     QHBoxLayout,
+    QLayout,
     QInputDialog,
     QLabel,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
+    QStyle,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -27,6 +30,93 @@ from core.project_service import project_config_status, project_statistics
 from ui.dialogs.update_progress_dialog import UpdateProgressDialog
 from ui.workers.update_worker import ProjectUpdateWorker
 
+
+class FlowLayout(QLayout):
+    """Simple wrapping layout for dashboard action buttons."""
+
+    def __init__(self, parent: QWidget | None = None, margin: int = 0, spacing: int = 12) -> None:
+        super().__init__(parent)
+        self._items: list[Any] = []
+        self.setContentsMargins(margin, margin, margin, margin)
+        self.setSpacing(spacing)
+
+    def addItem(self, item: Any) -> None:
+        self._items.append(item)
+
+    def count(self) -> int:
+        return len(self._items)
+
+    def itemAt(self, index: int) -> Any | None:
+        if 0 <= index < len(self._items):
+            return self._items[index]
+        return None
+
+    def takeAt(self, index: int) -> Any | None:
+        if 0 <= index < len(self._items):
+            return self._items.pop(index)
+        return None
+
+    def expandingDirections(self) -> Qt.Orientations:
+        return Qt.Orientations(Qt.Orientation(0))
+
+    def hasHeightForWidth(self) -> bool:
+        return True
+
+    def heightForWidth(self, width: int) -> int:
+        return self._do_layout(QRect(0, 0, width, 0), test_only=True)
+
+    def setGeometry(self, rect: QRect) -> None:
+        super().setGeometry(rect)
+        self._do_layout(rect, test_only=False)
+
+    def sizeHint(self) -> QSize:
+        return self.minimumSize()
+
+    def minimumSize(self) -> QSize:
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        margins = self.contentsMargins()
+        size += QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
+        return size
+
+    def _smart_spacing(self, pm: QStyle.PixelMetric) -> int:
+        parent = self.parent()
+        if parent is None:
+            return self.spacing()
+        if parent.isWidgetType():
+            return parent.style().pixelMetric(pm, None, parent)
+        return parent.spacing()
+
+    def _do_layout(self, rect: QRect, *, test_only: bool) -> int:
+        margins = self.contentsMargins()
+        effective_rect = rect.adjusted(margins.left(), margins.top(), -margins.right(), -margins.bottom())
+        x = effective_rect.x()
+        y = effective_rect.y()
+        line_height = 0
+        spacing = self.spacing()
+        if spacing < 0:
+            spacing = self._smart_spacing(QStyle.PM_LayoutHorizontalSpacing)
+
+        for item in self._items:
+            widget = item.widget()
+            if widget is not None and not widget.isVisible():
+                continue
+            item_size = item.sizeHint()
+            next_x = x + item_size.width() + spacing
+            if next_x - spacing > effective_rect.right() and line_height > 0:
+                x = effective_rect.x()
+                y += line_height + spacing
+                next_x = x + item_size.width() + spacing
+                line_height = 0
+
+            if not test_only:
+                item.setGeometry(QRect(QPoint(x, y), item_size))
+
+            x = next_x
+            line_height = max(line_height, item_size.height())
+
+        return y + line_height - rect.y() + margins.bottom()
 
 def _safe(value: Any, fallback: str = "—") -> str:
     if value is None or value == "":
@@ -107,9 +197,8 @@ class ProjectDashboard(QFrame):
 
         actions = QFrame()
         actions.setObjectName("DashboardSection")
-        action_layout = QHBoxLayout(actions)
+        action_layout = FlowLayout(actions, spacing=12)
         action_layout.setContentsMargins(20, 16, 20, 16)
-        action_layout.setSpacing(12)
         self.update_project_btn = self._action_button("🔄 Обновить проект", self.start_update)
         self.update_project_btn.setObjectName("PrimaryButton")
         self.open_excel_btn = self._action_button("Открыть Excel", self.open_excel)
@@ -118,7 +207,6 @@ class ProjectDashboard(QFrame):
         self.refresh_hint_btn = self._action_button("Обновить список", None)
         for button in (self.update_project_btn, self.open_excel_btn, self.open_folder_btn, self.open_xml_btn, self.refresh_hint_btn):
             action_layout.addWidget(button)
-        action_layout.addStretch()
         content_layout.addWidget(actions)
 
         feed_section = QFrame()
@@ -153,6 +241,8 @@ class ProjectDashboard(QFrame):
     def _action_button(self, text: str, callback: Any | None) -> QPushButton:
         button = QPushButton(text)
         button.setObjectName("SecondaryButton")
+        button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        button.setMinimumWidth(button.sizeHint().width())
         if callback is not None:
             button.clicked.connect(callback)
         return button
@@ -349,12 +439,16 @@ class ProjectDashboard(QFrame):
                 elapsed = str(elapsed_ms)
         message = (
             "✓ Проект успешно обновлён\n\n"
-            f"Project name: {_safe(result.get('project_name'))}\n"
-            f"Updated apartments: {_safe(result.get('updated_apartments'))}\n"
-            f"Added apartments: {_safe(result.get('added'))}\n"
-            f"Removed apartments: {_safe(result.get('deleted'))}\n"
-            f"Price changes: {_safe(result.get('prices_changed'))}\n"
-            f"Elapsed time: {elapsed}"
+            f"Проект: {_safe(result.get('project_name'))}\n"
+            f"Обновлено квартир: {_safe(result.get('updated_apartments'))}\n"
+            f"Добавлено квартир: {_safe(result.get('added'))}\n"
+            f"Удалено квартир: {_safe(result.get('deleted'))}\n"
+            f"Изменений цены: {_safe(result.get('prices_changed'))}\n"
+            f"Строк фида: {_safe(result.get('feed_rows'))}\n"
+            f"Строк Excel до обновления: {_safe(result.get('excel_rows_before'))}\n"
+            f"Строк Excel после обновления: {_safe(result.get('excel_rows_after'))}\n"
+            f"Обновлено ячеек: {_safe(result.get('updated_cells'))}\n"
+            f"Время выполнения: {elapsed}"
         )
         box = QMessageBox(self)
         box.setWindowTitle("Проект обновлён")
