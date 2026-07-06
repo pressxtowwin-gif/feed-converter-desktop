@@ -102,6 +102,7 @@ class MainWindow(QMainWindow):
 
         self.card = ProjectDashboard()
         self.card.refresh_hint_btn.clicked.connect(self.load_projects)
+        self.card.project_updated.connect(lambda code: self.load_projects(select_code=code))
         content_layout.addWidget(self.card, 1)
 
         main_layout.addWidget(content, 1)
