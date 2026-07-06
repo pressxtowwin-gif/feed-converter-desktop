@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSizePolicy,
+    QScrollArea,
     QStyle,
     QTextEdit,
     QVBoxLayout,
@@ -159,11 +160,19 @@ class ProjectDashboard(QFrame):
         self.empty_state.setAlignment(Qt.AlignCenter)
         root.addWidget(self.empty_state, 1)
 
+        self.content_scroll = QScrollArea()
+        self.content_scroll.setObjectName("DashboardScrollArea")
+        self.content_scroll.setWidgetResizable(True)
+        self.content_scroll.setFrameShape(QFrame.NoFrame)
+        self.content_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        root.addWidget(self.content_scroll, 1)
+
         self.content = QWidget()
+        self.content.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         content_layout = QVBoxLayout(self.content)
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(18)
-        root.addWidget(self.content, 1)
+        self.content_scroll.setWidget(self.content)
 
         header = QFrame()
         header.setObjectName("DashboardSection")
@@ -276,7 +285,7 @@ class ProjectDashboard(QFrame):
 
     def set_project(self, project: dict[str, Any] | None) -> None:
         self.project = project
-        self.content.setVisible(bool(project))
+        self.content_scroll.setVisible(bool(project))
         self.empty_state.setVisible(not bool(project))
         if not project:
             self.project_dir = None

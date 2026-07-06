@@ -220,34 +220,46 @@ def read_existing_rows_by_id(excel_path: str | Path) -> tuple[dict[str, dict[str
 
 
 def make_updated_row(feed_row: dict[str, Any], old_row: dict[str, Any] | None, output_columns: list[str]) -> tuple[dict[str, Any], int]:
-    """Создает строку для новой таблицы и возвращает количество измененных ячеек."""
+    """Создает строку для новой таблицы и возвращает количество измененных ячеек.
+
+    Счетчик изменений отражает только реальные перезаписи существующей строки
+    значениями из XML. Ручные и пользовательские поля, сохраненные из старой
+    таблицы, не считаются обновленными.
+    """
     result: dict[str, Any] = {}
     changed_cells = 0
 
     for col in output_columns:
         feed_value = feed_row.get(col, "")
         old_value = old_row.get(col, "") if old_row else ""
+        value_from_feed = False
 
         if col == "ID квартиры":
             value = feed_row.get(col, old_value)
+            value_from_feed = old_row is None
         elif col.startswith("Изображение "):
             value = feed_value
+            value_from_feed = True
         elif col in DYNAMIC_UPDATE_FIELDS:
             value = feed_value
+            value_from_feed = True
         elif col in MANUAL_OR_STATIC_FIELDS:
             # Для существующих строк сохраняем ручную/статичную информацию, если она есть.
-            # Для новых строк берем данные из XML.
-            value = old_value if old_row and not is_blank(old_value) else feed_value
+            # Для новых строк берем данные из XML. Если существующее значение было очищено,
+            # восстанавливаем XML-значение и считаем это обновлением ячейки.
+            value_from_feed = old_row is None or is_blank(old_value)
+            value = feed_value if value_from_feed else old_value
         else:
             # Пользовательские дополнительные колонки, если появятся в таблице, сохраняем по ID.
             value = old_value if old_row else feed_value
+            value_from_feed = old_row is None
 
-        result[col] = normalize_cell_value(value)
+        normalized_value = normalize_cell_value(value)
+        result[col] = normalized_value
 
-        if old_row is not None:
-            old_norm = "" if old_value is None else str(old_value).strip()
-            new_norm = "" if value is None else str(value).strip()
-            if old_norm != new_norm and (col in DYNAMIC_UPDATE_FIELDS or col.startswith("Изображение ")):
+        if old_row is not None and value_from_feed:
+            old_norm = normalize_cell_value(old_value)
+            if old_norm != normalized_value:
                 changed_cells += 1
 
     return result, changed_cells
@@ -287,8 +299,8 @@ def update_excel_from_feed_rows(rows: list[dict[str, Any]], feed_columns: list[s
             updated_apartments += 1
             updated_cells += changed_cells
         if old_row is not None:
-            old_price = "" if old_row.get("Цена") is None else str(old_row.get("Цена")).strip()
-            new_price = "" if feed_row.get("Цена") is None else str(feed_row.get("Цена")).strip()
+            old_price = normalize_cell_value(old_row.get("Цена"))
+            new_price = normalize_cell_value(feed_row.get("Цена"))
             if old_price != new_price:
                 prices_changed += 1
                 price_changes.append({
