@@ -45,6 +45,25 @@ def _root_from_projects_dir(projects_dir: str | Path) -> Path:
     # Обычно projects_dir = <root>/projects. Значит root = parent.
     return Path(projects_dir).resolve().parent
 
+
+def _latest_archived_xml(project_dir: Path) -> Path | None:
+    archive_dir = project_dir / "xml" / "archive"
+    if not archive_dir.exists():
+        return None
+    archived = sorted(archive_dir.glob("current_*.xml"), key=lambda path: path.stat().st_mtime, reverse=True)
+    return archived[0] if archived else None
+
+
+def _previous_feed_rows(project_dir: Path) -> list[dict[str, Any]] | None:
+    previous_xml = _latest_archived_xml(project_dir)
+    if previous_xml is None:
+        return None
+    try:
+        previous_rows, _previous_columns, _previous_format = parse_universal(load_xml(str(previous_xml)))
+        return previous_rows
+    except Exception:
+        return None
+
 def safe_project_code(name: str) -> str:
     # Минимальная транслитерация под рабочие названия ЖК.
     mapping = {
@@ -331,7 +350,13 @@ def update_project(projects_dir: str | Path, project_code: str, *, download: boo
 
     backup_path = backup_excel(project_dir, excel_path)
 
-    result = update_excel_from_feed_rows(rows, columns, excel_path, excel_path)
+    result = update_excel_from_feed_rows(
+        rows,
+        columns,
+        excel_path,
+        excel_path,
+        previous_feed_rows=_previous_feed_rows(project_dir),
+    )
 
     settings["last_update"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     settings["feed_format_last_detected"] = feed_format
@@ -340,7 +365,13 @@ def update_project(projects_dir: str | Path, project_code: str, *, download: boo
     # v0.8.1: Data Engine записывает агрегированный snapshot попытки обновления.
     data_engine_status = initialize_project_data_engine(project_dir)
     update_duration_ms = int((time.perf_counter() - started_at) * 1000)
-    changes_total = int(result.get("added", 0) or 0) + int(result.get("deleted", 0) or 0) + int(result.get("updated_cells", 0) or 0)
+    changes_total = (
+        int(result.get("added", 0) or 0)
+        + int(result.get("deleted", 0) or 0)
+        + int(result.get("prices_changed", 0) or 0)
+        + int(result.get("restored_excel_rows", 0) or 0)
+        + int(result.get("repaired_excel_cells", 0) or 0)
+    )
     try:
         update_id = save_project_snapshot(project_dir, {
             "update_result": "SUCCESS",
@@ -350,6 +381,9 @@ def update_project(projects_dir: str | Path, project_code: str, *, download: boo
             "apartments_removed": result.get("deleted", 0),
             "apartments_updated": result.get("updated_apartments", 0),
             "updated_cells": result.get("updated_cells", 0),
+            "restored_excel_rows": result.get("restored_excel_rows", 0),
+            "repaired_excel_apartments": result.get("repaired_excel_apartments", 0),
+            "repaired_excel_cells": result.get("repaired_excel_cells", 0),
             "prices_changed": result.get("prices_changed", 0),
             "changes_total": changes_total,
             "feed_size": Path(xml_source).stat().st_size if Path(xml_source).exists() else 0,
@@ -411,6 +445,12 @@ def update_project(projects_dir: str | Path, project_code: str, *, download: boo
             "added": result.get("added"),
             "updated_apartments": result.get("updated_apartments"),
             "updated_cells": result.get("updated_cells"),
+            "restored_excel_rows": result.get("restored_excel_rows"),
+            "repaired_excel_apartments": result.get("repaired_excel_apartments"),
+            "repaired_excel_cells": result.get("repaired_excel_cells"),
+            "restored_excel_ids": result.get("restored_excel_ids"),
+            "repaired_excel_apartment_ids": result.get("repaired_excel_apartment_ids"),
+            "repaired_excel_cells_by_apartment": result.get("repaired_excel_cells_by_apartment"),
             "backup": str(backup_path),
             "safety": safety_report.to_dict(),
             "safety_version": SAFETY_VERSION,
