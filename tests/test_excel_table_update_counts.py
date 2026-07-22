@@ -82,6 +82,8 @@ def test_update_counts_restored_feed_controlled_cells(tmp_path: Path) -> None:
 
     result = update_excel_from_feed_rows(feed_rows, columns, excel_path, output_path)
 
+    assert result["repaired_excel_cells"] == 3
+    assert result["repaired_excel_apartments"] == 2
     assert result["updated_cells"] == 3
     assert result["updated_apartments"] == 2
     assert result["added"] == 0
@@ -127,6 +129,8 @@ def test_clearing_cells_in_existing_rows_counts_updated_apartments_not_added(tmp
 
     result = update_excel_from_feed_rows(rows, columns, excel_path, output_path)
 
+    assert result["repaired_excel_apartments"] == 3
+    assert result["repaired_excel_cells"] == 3
     assert result["updated_apartments"] == 3
     assert result["updated_cells"] == 3
     assert result["added"] == 0
@@ -136,7 +140,7 @@ def test_clearing_cells_in_existing_rows_counts_updated_apartments_not_added(tmp
     assert result["excel_rows_after"] == 5
 
 
-def test_deleting_full_rows_by_apartment_id_counts_as_added_back(tmp_path: Path) -> None:
+def test_deleting_full_rows_by_apartment_id_counts_as_restored_excel_rows(tmp_path: Path) -> None:
     columns = _columns()
     rows = _feed_rows(5)
     excel_path = tmp_path / "lots.xlsx"
@@ -150,14 +154,16 @@ def test_deleting_full_rows_by_apartment_id_counts_as_added_back(tmp_path: Path)
 
     result = update_excel_from_feed_rows(rows, columns, excel_path, output_path)
 
-    assert result["added"] == 2
-    assert result["added_ids"] == ["2", "3"]
+    assert result["restored_excel_rows"] == 2
+    assert result["restored_excel_ids"] == ["2", "3"]
+    assert result["added"] == 0
+    assert result["added_ids"] == []
     assert result["deleted"] == 0
     assert result["excel_rows_before"] == 3
     assert result["excel_rows_after"] == 5
 
 
-def test_changing_price_counts_price_changes_and_updated_apartments(tmp_path: Path) -> None:
+def test_changing_price_repairs_excel_but_not_feed_price_changes(tmp_path: Path) -> None:
     columns = _columns()
     rows = _feed_rows(4)
     excel_path = tmp_path / "lots.xlsx"
@@ -172,8 +178,9 @@ def test_changing_price_counts_price_changes_and_updated_apartments(tmp_path: Pa
 
     result = update_excel_from_feed_rows(rows, columns, excel_path, output_path)
 
-    assert result["prices_changed"] == 2
-    assert len(result["price_changes"]) == 2
+    assert result["prices_changed"] == 0
+    assert len(result["price_changes"]) == 0
+    assert result["repaired_excel_apartments"] == 2
     assert result["updated_apartments"] >= 2
     assert result["updated_cells"] >= 2
     assert result["added"] == 0
@@ -190,5 +197,42 @@ def test_unchanged_file_counts_no_updates_or_additions(tmp_path: Path) -> None:
 
     assert result["updated_apartments"] == 0
     assert result["updated_cells"] == 0
+    assert result["restored_excel_rows"] == 0
+    assert result["repaired_excel_apartments"] == 0
+    assert result["repaired_excel_cells"] == 0
     assert result["added"] == 0
     assert result["deleted"] == 0
+
+
+def test_changed_feed_business_counters_use_previous_feed_state(tmp_path: Path) -> None:
+    columns = _columns()
+    previous_rows = _feed_rows(4)
+    current_rows = _feed_rows(4)
+    current_rows[1]["Цена"] = "2500"
+    current_rows.append({
+        "ID квартиры": "5",
+        "Номер квартиры": "105",
+        "Цена": "5000",
+        "Описание": "description 5",
+        "Планировка": "plan-5",
+        "Пользовательское": "manual 5",
+    })
+    current_rows = [row for row in current_rows if row["ID квартиры"] != "3"]
+    excel_path = tmp_path / "lots.xlsx"
+    output_path = tmp_path / "updated.xlsx"
+    create_excel_from_feed_rows(previous_rows, columns, excel_path)
+
+    result = update_excel_from_feed_rows(
+        current_rows,
+        columns,
+        excel_path,
+        output_path,
+        previous_feed_rows=previous_rows,
+    )
+
+    assert result["added"] == 1
+    assert result["added_ids"] == ["5"]
+    assert result["deleted"] == 1
+    assert result["deleted_ids"] == ["3"]
+    assert result["prices_changed"] == 1
+    assert result["restored_excel_rows"] == 0

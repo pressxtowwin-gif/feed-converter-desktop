@@ -66,6 +66,9 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             apartments_removed INTEGER NOT NULL DEFAULT 0,
             apartments_updated INTEGER NOT NULL DEFAULT 0,
             updated_cells INTEGER NOT NULL DEFAULT 0,
+            restored_excel_rows INTEGER NOT NULL DEFAULT 0,
+            repaired_excel_apartments INTEGER NOT NULL DEFAULT 0,
+            repaired_excel_cells INTEGER NOT NULL DEFAULT 0,
             prices_changed INTEGER NOT NULL DEFAULT 0,
             changes_total INTEGER NOT NULL DEFAULT 0,
             feed_size INTEGER NOT NULL DEFAULT 0,
@@ -84,6 +87,9 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "project_snapshot", "failure_reason", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "project_snapshot", "apartments_updated", "INTEGER NOT NULL DEFAULT 0")
     _ensure_column(conn, "project_snapshot", "updated_cells", "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(conn, "project_snapshot", "restored_excel_rows", "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(conn, "project_snapshot", "repaired_excel_apartments", "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(conn, "project_snapshot", "repaired_excel_cells", "INTEGER NOT NULL DEFAULT 0")
     _ensure_column(conn, "project_snapshot", "feed_type", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "project_snapshot", "parser_version", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "project_snapshot", "forced", "INTEGER NOT NULL DEFAULT 0")

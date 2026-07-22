@@ -448,15 +448,18 @@ class ProjectDashboard(QFrame):
                 elapsed = str(elapsed_ms)
         message = (
             "✓ Проект успешно обновлён\n\n"
-            f"Проект: {_safe(result.get('project_name'))}\n"
-            f"Обновлено квартир: {_safe(result.get('updated_apartments'))}\n"
-            f"Добавлено квартир: {_safe(result.get('added'))}\n"
-            f"Удалено квартир: {_safe(result.get('deleted'))}\n"
-            f"Изменений цены: {_safe(result.get('prices_changed'))}\n"
+            f"Проект: {_safe(result.get('project_name'))}\n\n"
+            "Изменения в фиде:\n"
+            f"- Новых квартир в фиде: {_safe(result.get('added'))}\n"
+            f"- Удалено из фида: {_safe(result.get('deleted'))}\n"
+            f"- Изменений цены в фиде: {_safe(result.get('prices_changed'))}\n\n"
+            "Исправления Excel:\n"
+            f"- Восстановлено строк: {_safe(result.get('restored_excel_rows'))}\n"
+            f"- Исправлено квартир: {_safe(result.get('repaired_excel_apartments'))}\n"
+            f"- Исправлено ячеек: {_safe(result.get('repaired_excel_cells'))}\n\n"
             f"Строк фида: {_safe(result.get('feed_rows'))}\n"
             f"Строк Excel до обновления: {_safe(result.get('excel_rows_before'))}\n"
             f"Строк Excel после обновления: {_safe(result.get('excel_rows_after'))}\n"
-            f"Обновлено ячеек: {_safe(result.get('updated_cells'))}\n"
             f"Время выполнения: {elapsed}"
         )
         box = QMessageBox(self)

@@ -265,7 +265,14 @@ def make_updated_row(feed_row: dict[str, Any], old_row: dict[str, Any] | None, o
     return result, changed_cells
 
 
-def update_excel_from_feed_rows(rows: list[dict[str, Any]], feed_columns: list[str], excel_path: str | Path, output_path: str | Path) -> dict[str, Any]:
+def update_excel_from_feed_rows(
+    rows: list[dict[str, Any]],
+    feed_columns: list[str],
+    excel_path: str | Path,
+    output_path: str | Path,
+    *,
+    previous_feed_rows: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     existing_by_id, old_columns, excel_rows_before = read_existing_rows_by_id(excel_path)
 
     feed_by_id: dict[str, dict[str, Any]] = {}
@@ -280,6 +287,12 @@ def update_excel_from_feed_rows(rows: list[dict[str, Any]], feed_columns: list[s
 
     output_columns = build_output_columns(old_columns, feed_columns)
 
+    previous_feed_by_id: dict[str, dict[str, Any]] = {}
+    for row in (previous_feed_rows if previous_feed_rows is not None else rows):
+        prev_id = normalize_id(row.get("ID квартиры"))
+        if prev_id:
+            previous_feed_by_id[prev_id] = row
+
     output_rows: list[dict[str, Any]] = []
     added = 0
     processed_apartments = 0
@@ -288,14 +301,23 @@ def update_excel_from_feed_rows(rows: list[dict[str, Any]], feed_columns: list[s
     prices_changed = 0
     added_ids: list[str] = []
     price_changes: list[dict[str, str]] = []
+    restored_excel_rows = 0
+    restored_excel_ids: list[str] = []
+    repaired_excel_apartments = 0
+    repaired_excel_cells = 0
+    repaired_excel_apartment_ids: list[str] = []
+    repaired_excel_cells_by_apartment: dict[str, int] = {}
 
     for apt_id in feed_order:
         processed_apartments += 1
         feed_row = feed_by_id[apt_id]
         old_row = existing_by_id.get(apt_id)
-        if old_row is None:
+        if apt_id not in previous_feed_by_id:
             added += 1
             added_ids.append(apt_id)
+        if old_row is None and apt_id in previous_feed_by_id:
+            restored_excel_rows += 1
+            restored_excel_ids.append(apt_id)
         new_row, changed_cells = make_updated_row(feed_row, old_row, output_columns)
         # Updated-apartment semantics are intentionally narrower than processed rows:
         # count only existing apartment IDs where at least one feed-controlled cell
@@ -304,8 +326,12 @@ def update_excel_from_feed_rows(rows: list[dict[str, Any]], feed_columns: list[s
         if old_row is not None and changed_cells > 0:
             updated_apartments += 1
             updated_cells += changed_cells
-        if old_row is not None:
-            old_price = normalize_cell_value(old_row.get("Цена"))
+            repaired_excel_apartments += 1
+            repaired_excel_cells += changed_cells
+            repaired_excel_apartment_ids.append(apt_id)
+            repaired_excel_cells_by_apartment[apt_id] = changed_cells
+        if apt_id in previous_feed_by_id:
+            old_price = normalize_cell_value(previous_feed_by_id[apt_id].get("Цена"))
             new_price = normalize_cell_value(feed_row.get("Цена"))
             if old_price != new_price:
                 prices_changed += 1
@@ -316,7 +342,7 @@ def update_excel_from_feed_rows(rows: list[dict[str, Any]], feed_columns: list[s
                 })
         output_rows.append(new_row)
 
-    deleted_ids = sorted(set(existing_by_id) - set(feed_by_id))
+    deleted_ids = sorted(set(previous_feed_by_id) - set(feed_by_id))
     deleted = len(deleted_ids)
 
     write_rows_to_xlsx(output_rows, output_columns, output_path)
@@ -331,9 +357,15 @@ def update_excel_from_feed_rows(rows: list[dict[str, Any]], feed_columns: list[s
         "updated_apartments": updated_apartments,
         "updated_cells": updated_cells,
         "prices_changed": prices_changed,
+        "restored_excel_rows": restored_excel_rows,
+        "repaired_excel_apartments": repaired_excel_apartments,
+        "repaired_excel_cells": repaired_excel_cells,
         "added_ids": added_ids,
         "deleted_ids": deleted_ids,
         "price_changes": price_changes,
+        "restored_excel_ids": restored_excel_ids,
+        "repaired_excel_apartment_ids": repaired_excel_apartment_ids,
+        "repaired_excel_cells_by_apartment": repaired_excel_cells_by_apartment,
         "excel_rows_after": len(output_rows),
         "output": str(output_path),
     }
